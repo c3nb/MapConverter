@@ -723,156 +723,6 @@ namespace MapConverter
                 public bool KeepShape = true;
             }
         }
-        [TweakGroup(Id = "Normal Converters")]
-        [Tweak("Value Converter", SettingsType = typeof(Settings), SpacingSize = 0)]
-        public class ValueConverterTweak : NormalConverters
-        {
-            public bool Converted = false;
-            public bool Converting = false;
-            public string ToOpenLevel = null;
-            public string Notification = string.Empty;
-            [SyncSettings]
-            public Settings Setting { get; set; }
-            public override void OnEnable()
-            {
-                if (Main.Path.Length <= 0)
-                    Main.Path = Setting.PrevConvertedPath;
-            }
-            public override void OnGUI()
-            {
-                Converted = Setting.PrevConvertedPath == Main.Path;
-                if (!Converted && !Converting) Notification = string.Empty;
-
-
-                GUILayout.BeginHorizontal();
-                if (GUILayout.Button("Convert"))
-                {
-                    Notification = "Converting...";
-                    GetConvertThread().Start();
-                }
-                GUILayout.Label(Notification);
-                GUILayout.FlexibleSpace();
-                GUILayout.EndHorizontal();
-            }
-            public override void OnUpdate()
-            {
-                if (ToOpenLevel != null)
-                {
-                    if (scnEditor.instance)
-                        OpenLevel(ToOpenLevel);
-                    ToOpenLevel = null;
-                }
-            }
-            public Thread GetConvertThread()
-            {
-                return new Thread(() =>
-                {
-                    Converting = true;
-                    var file = new FileInfo(Main.Path);
-                    var mapStr = File.ReadAllText(file.FullName);
-                    var map = ACL.Read(JsonNode.Parse(mapStr));
-                    var planetAmount = FastParser.ParseInt(Setting.PlanetAmount);
-                    var result = PlanetConverter.Convert(map, planetAmount, Setting.KeepShape);
-                    var resultStr = result.ToNode().ToString(4);
-                    var resultPath = $"{file.DirectoryName}/Planet {planetAmount} {file.Name}";
-                    File.WriteAllText(resultPath, resultStr);
-                    Setting.PrevConvertedPath = Main.Path;
-                    Notification = "Convert Successful.";
-                    Converting = false;
-                    Converted = true;
-                    ToOpenLevel = resultPath;
-                });
-            }
-            public class Settings : TweakSettings
-            {
-                public string PrevConvertedPath = string.Empty;
-                public List<Data> Datas = new List<Data>();
-            }
-            public class Data
-            {
-                public ACL Level;
-                public RangeInt Range;
-                public LevelEventType EventType;
-                public bool Relative;
-                public Data(ACL level, RangeInt range, LevelEventType eventType, bool relative)
-                {
-                    Level = level;
-                    Range = range;
-                    EventType = eventType;
-                    Relative = relative;
-                    Changes = new Dictionary<string, ChangeData>();
-                    EventImplType = typeof(MapConverterBase).Assembly.GetType($"AdofaiMapConverter.Actions.{eventType}");
-                }
-                public Dictionary<string, ChangeData> Changes;
-                public Type EventImplType;
-                public bool CanChangeRelative(string name)
-                    => EventImplType.GetProperty(name).PropertyType != typeof(string);
-                public bool AddChange(string name, object value, bool relative)
-                {
-                    PropertyInfo prop = EventImplType.GetProperty(name);
-                    if (prop == null) return false;
-                    Changes.Add(name, new ChangeData(prop, value, relative));
-                    return true;
-                }
-                public bool RemoveChange(string name)
-                    => Changes.Remove(name);
-                public void ChangeValue()
-                {
-                    var actions = Level.Tiles
-                        .GetRange(Range.start, Range.length)
-                        .SelectMany(t => t.GetActions(EventType));
-                    foreach (var change in Changes.Values)
-                        foreach (var action in actions)
-                            change.Change(action);
-                }
-                public class ChangeData
-                {
-                    public ChangeData(PropertyInfo prop, object value, bool relative)
-                    {
-                        this.prop = prop;
-                        this.value = value;
-                        this.relative = relative;
-                    }
-                    public PropertyInfo prop;
-                    public object value;
-                    public bool relative;
-                    public void Change(AdofaiMapConverter.Actions.Action action)
-                    {
-                        var pType = prop.PropertyType;
-                        if (pType == typeof(string))
-                            prop.SetValue(action, value);
-                        else
-                        {
-                            if (relative)
-                            {
-                                var pValue = prop.GetValue(action);
-                                if (pType == typeof(int))
-                                    prop.SetValue(action, CastToIntSafe(pValue) + CastToIntSafe(value));
-                                if (pType == typeof(float))
-                                    prop.SetValue(action, CastToFloatSafe(pValue) + CastToFloatSafe(value));
-                                if (pType == typeof(double))
-                                    prop.SetValue(action, CastToDoubleSafe(pValue) + CastToDoubleSafe(value));
-                            }
-                            else
-                            {
-                                if (pType == typeof(int))
-                                    prop.SetValue(action, CastToIntSafe(value));
-                                if (pType == typeof(float))
-                                    prop.SetValue(action, CastToFloatSafe(value));
-                                if (pType == typeof(double))
-                                    prop.SetValue(action, CastToDoubleSafe(value));
-                            }
-                        }
-                    }
-                    static float CastToFloatSafe(object obj)
-                        => obj is int i ? i : obj is double d ? (float)d : (float)obj;
-                    static int CastToIntSafe(object obj)
-                        => obj is float f ? (int)f : obj is double d ? (int)d : (int)obj;
-                    static double CastToDoubleSafe(object obj)
-                        => obj is int i ? i : obj is float f ? (double)f : (double)obj;
-                }
-            }
-        }
         [HarmonyPatch(typeof(scnEditor), "OpenLevel")]
         public static class SetMapPath
         {
@@ -1075,6 +925,330 @@ namespace MapConverter
             public class Settings : TweakSettings
             {
                 public string PrevConvertedPath = string.Empty;
+            }
+        }
+        [TweakGroup(Id = "Effect Converters")]
+        [Tweak("Value Converter", SettingsType = typeof(Settings), SpacingSize = 0)]
+        public class ValueConverterTweak : EffectConverters
+        {
+            public bool Converted = false;
+            public bool Converting = false;
+            public string ToOpenLevel = null;
+            public string Notification = string.Empty;
+            private void UpdateCurrent()
+            {
+                try
+                {
+                    if (current == null || currentPath != Main.Path)
+                        current = ACL.Read(JsonNode.Parse(File.ReadAllText(currentPath = Main.Path)));
+                }
+                catch (ArgumentException)
+                {
+                    Notification = $"'{currentPath}' Is Not Valid Path!";
+                }
+            }
+            [SyncSettings]
+            public Settings Setting { get; set; }
+            public override void OnEnable()
+            {
+                if (Main.Path.Length <= 0)
+                    Main.Path = Setting.PrevConvertedPath;
+            }
+            private ACL current;
+            private string currentPath;
+            private RangeInt range = new RangeInt();
+            private string eventType;
+            public override void OnGUI()
+            {
+                Converted = Setting.PrevConvertedPath == Main.Path;
+                if (!Converted && !Converting) Notification = string.Empty;
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("EventType:");
+                eventType = GUILayout.TextField(eventType);
+
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                {
+                    GUILayout.Label("From:");
+                    string from = range.start.ToString();
+                    from = GUILayout.TextField(from);
+                    range.start = FastParser.ParseInt(from);
+
+                    GUILayout.Label("To:");
+                    string to = range.end.ToString();
+                    to = GUILayout.TextField(to);
+                    range.length = FastParser.ParseInt(to) - range.start;
+
+                    if (GUILayout.Button("All"))
+                    {
+                        UpdateCurrent();
+                        range = new RangeInt(0, current.Tiles.Count);
+                    }
+                }
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Add"))
+                {
+                    UpdateCurrent();
+                    LevelEventType realType;
+                    try { realType = (LevelEventType)Enum.Parse(typeof(LevelEventType), eventType); }
+                    catch { Notification = $"{eventType} Is Does Not Exist In LevelEventType!"; goto Continue; }
+                    if (!Setting.Datas.Any(d => d.EventType == realType))
+                        Setting.Datas.Add(new Data(current, range, realType));
+                }
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+
+                foreach (Data data in Setting.Datas)
+                    data.RenderGUI();
+
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Convert"))
+                {
+                    if (Setting.Datas.Count <= 0)
+                    {
+                        Notification = "Cannot Convert 0 Changes!";
+                        goto Continue;
+                    }
+                    Notification = "Converting...";
+                    GetConvertThread().Start();
+                }
+                GUILayout.Label(Notification);
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+            Continue:
+                return;
+            }
+            public override void OnUpdate()
+            {
+                if (ToOpenLevel != null)
+                {
+                    if (scnEditor.instance)
+                        NormalConverters.OpenLevel(ToOpenLevel);
+                    ToOpenLevel = null;
+                }
+            }
+            public Thread GetConvertThread()
+            {
+                return new Thread(() =>
+                {
+                    Converting = true;
+                    var file = new FileInfo(Main.Path);
+                    Setting.Datas.ForEach(d => d.ChangeValue());
+                    var resultStr = current.ToNode().ToString(4);
+                    var resultPath = $"{file.DirectoryName}/{AggregateEvents(Setting.Datas)} Changed {file.Name}";
+                    File.WriteAllText(resultPath, resultStr);
+                    Setting.PrevConvertedPath = Main.Path;
+                    Notification = "Convert Successful.";
+                    Converting = false;
+                    Converted = true;
+                    ToOpenLevel = resultPath;
+                });
+            }
+            static string AggregateEvents(List<Data> datas)
+            {
+                if (datas.Count == 1) return datas[0].EventType.ToString();
+                return datas.Aggregate("", (c, d) => $"{c}{d.EventType},");
+            }
+            public class Settings : TweakSettings
+            {
+                public string PrevConvertedPath = string.Empty;
+                public List<Data> Datas = new List<Data>();
+            }
+            public class Data
+            {
+                public Data() { }
+                public ACL Level;
+                public RangeInt Range;
+                public LevelEventType EventType;
+                public Data(ACL level, RangeInt range, LevelEventType eventType)
+                {
+                    Level = level;
+                    Range = range;
+                    EventType = eventType;
+                    Changes = new Dictionary<string, ChangeData>();
+                    EventImplType = typeof(MapConverterBase).Assembly.GetType($"AdofaiMapConverter.Actions.{eventType}");
+                }
+                public bool Change = true;
+                public Dictionary<string, ChangeData> Changes;
+                public Type EventImplType;
+                public bool AddChange(string name, object value, bool relative)
+                {
+                    PropertyInfo prop = EventImplType.GetProperty(name);
+                    if (prop == null) return false;
+                    Changes.Add(name, new ChangeData(prop, value, relative));
+                    return true;
+                }
+                public bool RemoveChange(string name)
+                    => Changes.Remove(name);
+                public void ChangeValue()
+                {
+                    if (!Change) return;
+                    var actions = Level.Tiles
+                        .GetRange(Range.start, Range.length)
+                        .SelectMany(t => t.GetActions(EventType));
+                    foreach (var change in Changes.Values)
+                        foreach (var action in actions)
+                            change.Change(action);
+                }
+                private string name;
+                private string notification;
+                private string toRemoveQueue;
+                public void RenderGUI()
+                {
+                    if (toRemoveQueue != null)
+                    {
+                        Changes.Remove(toRemoveQueue);
+                        toRemoveQueue = null;
+                    }
+                    if (Change = GUILayout.Toggle(Change, $"<b>Change {EventType}</b>"))
+                    {
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label("Event Property Name:");
+                        name = GUILayout.TextField(name);
+                        if (GUILayout.Button("Add"))
+                        {
+                            if (!AddChange(name, null, false))
+                                notification = $"{name} Does Not Exist In {EventType}.";
+                            else notification = string.Empty;
+                        }
+                        GUILayout.FlexibleSpace();
+                        GUILayout.EndHorizontal();
+
+                        if (!string.IsNullOrWhiteSpace(notification))
+                            GUILayout.Label(notification);
+
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Space(20);
+                        GUILayout.BeginVertical();
+                        foreach (ChangeData change in Changes.Values)
+                        {
+                            if (!change.RenderGUI())
+                                toRemoveQueue = change.name;
+                        }
+                        GUILayout.EndVertical();
+                        GUILayout.EndHorizontal();
+                    }
+                }
+                public class ChangeData
+                {
+                    public ChangeData() { }
+                    public enum ValueType
+                    {
+                        String,
+                        Int,
+                        Double,
+                        Float
+                    }
+                    public ChangeData(PropertyInfo prop, object value, bool relative)
+                    {
+                        this.prop = prop;
+                        name = prop.Name;
+                        this.value = value ?? "";
+                        this.relative = relative;
+                        valueType = value switch
+                        {
+                            int => ValueType.Int,
+                            double => ValueType.Double,
+                            float => ValueType.Float,
+                            string => ValueType.String,
+                            _ => ValueType.String
+                        };
+                    }
+                    public ValueType valueType;
+                    public bool change = true;
+                    public string name;
+                    public PropertyInfo prop;
+                    public object value;
+                    public bool relative;
+                    public bool RenderGUI()
+                    {
+                        if (change = GUILayout.Toggle(change, $"<b>Change {name}</b>"))
+                        {
+                            GUILayout.BeginHorizontal();
+                            GUILayout.Space(20);
+                            GUILayout.BeginVertical();
+                            {
+                                relative = GUILayout.Toggle(relative, "Relative");
+                                GUILayout.BeginHorizontal();
+                                {
+                                    GUILayout.Label($"To Change Value{(relative ? " Relative" : "")}:");
+                                    string s = value.ToString();
+                                    s = GUILayout.TextArea(s);
+                                    switch (valueType)
+                                    {
+                                        case ValueType.String:
+                                            value = s;
+                                            break;
+                                        case ValueType.Int:
+                                            value = FastParser.ParseInt(s);
+                                            break;
+                                        case ValueType.Float:
+                                            value = FastParser.ParseFloat(s);
+                                            break;
+                                        case ValueType.Double:
+                                            value = FastParser.ParseDouble(s);
+                                            break;
+                                    }
+                                }
+                                GUILayout.FlexibleSpace();
+                                GUILayout.EndHorizontal();
+                            }
+
+                            GUILayout.BeginHorizontal();
+                            if (GUILayout.Button("Remove"))
+                                return false;
+                            GUILayout.FlexibleSpace();
+                            GUILayout.EndHorizontal();
+
+                            GUILayout.EndVertical();
+                            GUILayout.EndHorizontal();
+                        }
+                        return true;
+                    }
+                    public object GetCurValue(AdofaiMapConverter.Actions.Action action)
+                        => prop.GetValue(action);
+                    public void Change(AdofaiMapConverter.Actions.Action action)
+                    {
+                        if (!change) return;
+                        var pType = prop.PropertyType;
+                        if (pType == typeof(string))
+                            prop.SetValue(action, value);
+                        else
+                        {
+                            if (relative)
+                            {
+                                var pValue = prop.GetValue(action);
+                                if (pType == typeof(int))
+                                    prop.SetValue(action, CastToIntSafe(pValue) + CastToIntSafe(value));
+                                if (pType == typeof(float))
+                                    prop.SetValue(action, CastToFloatSafe(pValue) + CastToFloatSafe(value));
+                                if (pType == typeof(double))
+                                    prop.SetValue(action, CastToDoubleSafe(pValue) + CastToDoubleSafe(value));
+                            }
+                            else
+                            {
+                                if (pType == typeof(int))
+                                    prop.SetValue(action, CastToIntSafe(value));
+                                if (pType == typeof(float))
+                                    prop.SetValue(action, CastToFloatSafe(value));
+                                if (pType == typeof(double))
+                                    prop.SetValue(action, CastToDoubleSafe(value));
+                            }
+                        }
+                    }
+                    static float CastToFloatSafe(object obj)
+                        => (float)Convert.ChangeType(obj, typeof(float));
+                    static int CastToIntSafe(object obj)
+                        => (int)Convert.ChangeType(obj, typeof(int));
+                    static double CastToDoubleSafe(object obj)
+                        => (double)Convert.ChangeType(obj, typeof(double));
+                }
             }
         }
     }
