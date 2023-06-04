@@ -7,6 +7,15 @@ using static UnityModManagerNet.UnityModManager;
 
 namespace MapConverter
 {
+    [AttributeUsage(AttributeTargets.All, AllowMultiple = true)]
+    public class CommentAttribute : Attribute
+    {
+        public string Comment { get; }
+        public CommentAttribute(string comment) => Comment = comment;
+    }
+    [Comment("Secret Key Combo List:")]
+    [Comment("ilconverter => Make IL Shape Converter On GUI")]
+    [Comment("breaklimit => Break Planet Count Limits")]
     public static class Main
     {
         public static string Path = string.Empty;

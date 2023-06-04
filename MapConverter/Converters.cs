@@ -660,19 +660,32 @@ namespace MapConverter
             }
         }
         [TweakGroup(Id = "Normal Converters")]
-        [Tweak("Planet Amount Converter", PatchesType = typeof(Patches), SettingsType = typeof(Settings), SpacingSize = 0)]
+        [Tweak("Planet Amount Converter", SettingsType = typeof(Settings), SpacingSize = 0)]
         public class PlanetConverterTweak : NormalConverters
         {
             public bool Converted = false;
             public bool Converting = false;
             public string ToOpenLevel = null;
             public string Notification = string.Empty;
+            private Harmony harmony;
+            private KeyCombo breakLimitCombo = new KeyCombo("breaklimit");
+            private bool limitBroken = false;
             [SyncSettings]
             public Settings Setting { get; set; }
             public override void OnEnable()
             {
                 if (Main.Path.Length <= 0)
                     Main.Path = Setting.PrevConvertedPath;
+                if (limitBroken)
+                {
+                    harmony = new Harmony("Planet Amount Converter Patch");
+                    harmony.CreateClassProcessor(typeof(Patches)).Patch();
+                }
+            }
+            public override void OnDisable()
+            {
+                harmony?.UnpatchAll(harmony?.Id);
+                harmony = null;
             }
             public override void OnGUI()
             {
@@ -698,6 +711,11 @@ namespace MapConverter
                     if (scnEditor.instance)
                         OpenLevel(ToOpenLevel);
                     ToOpenLevel = null;
+                }
+                if (breakLimitCombo.Check())
+                {
+                    scrFlash.Flash(Color.white);
+                    OnEnable();
                 }
             }
             public Thread GetConvertThread()
@@ -739,7 +757,12 @@ namespace MapConverter
                     public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
                     {
                         List<CodeInstruction> insts = new List<CodeInstruction>(instructions);
-                        RemoveMethodCall(insts, AccessTools.Method(typeof(Math), "Min", new[] { typeof(int), typeof(int) }));
+                        for (int i = 0; i < insts.Count; i++)
+                        {
+                            var inst = insts[i];
+                            if (inst.operand is string s && s == "Planets more than 3 works but is an unreleased feature right now. If you're reading this, please do not release a mod to disable it or share footage, so we can keep the spoiler")
+                                insts.RemoveRange(i - 12, 14);
+                        }
                         return insts;
                     }
                     public static void RemoveMethodCall(List<CodeInstruction> insts, MethodInfo target, int start = -1, int end = -1)
