@@ -14,6 +14,10 @@ using JSON;
 using System.Reflection;
 using System.Collections.Generic;
 using ACL = AdofaiMapConverter.CustomLevel;
+using System.Reflection.Emit;
+using LevelEventType = AdofaiMapConverter.Types.LevelEventType;
+using PropertyInfo = System.Reflection.PropertyInfo;
+using ADOFAI;
 #if HAS_OPENCV
 using System.Drawing;
 using OpenCvSharp;
@@ -38,7 +42,7 @@ namespace MapConverter
                 pauseIfUnpaused(editor);
                 editor.StartCoroutine((IEnumerator)openLevelCo(editor, path));
             }));
-            if (GCS.standaloneLevelMode)
+            if (ADOBase.isCLSLevel)
                 editor.DeselectFloors(true);
         }
         public static void iLConvert()
@@ -656,7 +660,7 @@ namespace MapConverter
             }
         }
         [TweakGroup(Id = "Normal Converters")]
-        [Tweak("Planet Amount Converter", SettingsType = typeof(Settings), SpacingSize = 0)]
+        [Tweak("Planet Amount Converter", PatchesType = typeof(Patches), SettingsType = typeof(Settings), SpacingSize = 0)]
         public class PlanetConverterTweak : NormalConverters
         {
             public bool Converted = false;
@@ -721,6 +725,51 @@ namespace MapConverter
                 public string PrevConvertedPath = string.Empty;
                 public string PlanetAmount = "1";
                 public bool KeepShape = true;
+            }
+            public class Patches
+            {
+                [HarmonyPatch]
+                public static class BreakPlanetsLimit_CustomLevel
+                {
+                    public static IEnumerable<MethodBase> TargetMethods()
+                    {
+                        yield return AccessTools.Method(typeof(scnGame), "ApplyCoreEventsToFloors", new[] { typeof(List<scrFloor>), typeof(LevelData), typeof(scrLevelMaker), typeof(List<LevelEvent>), typeof(List<LevelEvent>[]) });
+                        yield return AccessTools.Method(typeof(scnGame), "ApplyEventsToFloors", new[] { typeof(List<scrFloor>), typeof(LevelData), typeof(scrLevelMaker), typeof(List<LevelEvent>) });
+                    }
+                    public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+                    {
+                        List<CodeInstruction> insts = new List<CodeInstruction>(instructions);
+                        RemoveMethodCall(insts, AccessTools.Method(typeof(Math), "Min", new[] { typeof(int), typeof(int) }));
+                        return insts;
+                    }
+                    public static void RemoveMethodCall(List<CodeInstruction> insts, MethodInfo target, int start = -1, int end = -1)
+                    {
+                        List<int> calls = new List<int>();
+                        for (int i = start < 0 ? 0 : start; i < (end < 0 ? insts.Count : end); i++)
+                        {
+                            CodeInstruction inst = insts[i];
+                            if (inst.opcode != OpCodes.Call)
+                                continue;
+                            if (inst.operand is MethodInfo meth && meth == target)
+                                calls.Add(i);
+                        }
+                        if (!calls.Any()) return;
+                        int parameterCount = target.GetParameters().Length;
+                        bool isInstance = !target.IsStatic;
+                        bool hasReturn = target.ReturnType != typeof(void);
+                        int offset = 0;
+                        foreach (int call in calls)
+                        {
+                            int from;
+                            insts.RemoveAt(from = call + offset--);
+                            int count = parameterCount + (isInstance ? 1 : 0);
+                            for (int i = 0; i < count; i++)
+                                insts.Insert(i + call + offset++, new CodeInstruction(OpCodes.Pop));
+                            if (hasReturn)
+                                insts.RemoveAt(call + offset--);
+                        }
+                    }
+                }
             }
         }
         [HarmonyPatch(typeof(scnEditor), "OpenLevel")]
@@ -1058,7 +1107,7 @@ namespace MapConverter
             public class Settings : TweakSettings
             {
                 public string PrevConvertedPath = string.Empty;
-                public List<Data> Datas = new List<Data>();
+                internal List<Data> Datas = new List<Data>();
             }
             public class Data
             {

@@ -12,7 +12,7 @@
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
-	<LangVersion>9.0</LangVersion>
+    <LangVersion>9.0</LangVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -39,7 +39,7 @@
     </Reference>
     <Reference Include="AdofaiMapConverter, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\AdofaiMapConverter\AdofaiMapConverter\bin\Debug\AdofaiMapConverter.dll</HintPath>
+      <HintPath>..\..\..\AdofaiMapConverter\AdofaiMapConverter\bin\Debug\AdofaiMapConverter.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp">
       <HintPath>C:\Program Files (x86)\Steam\steamapps\common\A Dance of Fire and Ice\A Dance of Fire and Ice_Data\Managed\Assembly-CSharp.dll</HintPath>
@@ -309,4 +309,7 @@
     <Compile Include="Tweaks.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <PostBuildEvent>copy "$(TargetPath)" "C:\Program Files (x86)\Steam\steamapps\common\A Dance of Fire and Ice\Mods\MapConverter\MapConverter.dll"</PostBuildEvent>
+  </PropertyGroup>
 </Project>

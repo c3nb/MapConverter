@@ -1,12 +1,8 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using UnityEngine;
 using Tweaks;
 using SFB;
 using System.IO;
-using JSON;
 using static UnityModManagerNet.UnityModManager;
 
 namespace MapConverter
@@ -16,6 +12,8 @@ namespace MapConverter
         public static string Path = string.Empty;
         public static bool isiLActivated = false;
         public static bool isiL = false;
+        public static ModEntry Mod;
+        public static ModEntry.ModLogger Logger;
         public static KeyCombo iLCombo = new KeyCombo("ilconverter");
         public static void Load(ModEntry modEntry)
         {
@@ -32,6 +30,8 @@ namespace MapConverter
             AppDomain.CurrentDomain.Load(File.ReadAllBytes("Mods/MapConverter/OpenCvSharp.dll"));
             LoadAfter(modEntry);
 #endif
+            Mod = modEntry;
+            Logger = modEntry.Logger;
             AppDomain.CurrentDomain.Load(File.ReadAllBytes("Mods/MapConverter/AdofaiMapConverter.dll"));
             modEntry.OnGUI = OnGUI;
             modEntry.OnUpdate = (m, dt) =>
