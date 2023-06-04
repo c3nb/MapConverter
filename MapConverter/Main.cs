@@ -4,6 +4,7 @@ using Tweaks;
 using SFB;
 using System.IO;
 using static UnityModManagerNet.UnityModManager;
+using HarmonyLib;
 
 namespace MapConverter
 {

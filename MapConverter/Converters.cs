@@ -3,7 +3,6 @@ using System.Linq;
 using AdofaiMapConverter.Converters;
 using AdofaiMapConverter.Helpers;
 using AdofaiMapConverter.Converters.Effects;
-using AdofaiMapConverter.Types;
 using Tweaks;
 using UnityEngine;
 using System.IO;
@@ -679,7 +678,7 @@ namespace MapConverter
                 if (limitBroken)
                 {
                     harmony = new Harmony("Planet Amount Converter Patch");
-                    harmony.CreateClassProcessor(typeof(Patches)).Patch();
+                    harmony.CreateClassProcessor(typeof(Patches.BreakPlanetsLimit_CustomLevel)).Patch();
                 }
             }
             public override void OnDisable()
@@ -715,6 +714,7 @@ namespace MapConverter
                 if (breakLimitCombo.Check())
                 {
                     scrFlash.Flash(Color.white);
+                    limitBroken = true;
                     OnEnable();
                 }
             }
