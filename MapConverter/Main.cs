@@ -5,6 +5,8 @@ using SFB;
 using System.IO;
 using static UnityModManagerNet.UnityModManager;
 using HarmonyLib;
+using AdofaiMapConverter;
+using System.Runtime.CompilerServices;
 
 namespace MapConverter
 {
@@ -28,21 +30,10 @@ namespace MapConverter
         public static void Load(ModEntry modEntry)
         {
 #if HAS_OPENCV
-            if (Application.platform == RuntimePlatform.OSXPlayer && !File.Exists("Mods/MapConverter/libOpenCvSharpExtern.dylib"))
-            {
-                FileInfo fi = new FileInfo("Mods/MapConverter/OpenCvSharpExtern/libOpenCvSharpExtern.dylib");
-                fi.CopyTo("Mods/MapConverter/libOpenCvSharpExtern.dylib");
-            }
-            AppDomain.CurrentDomain.Load(File.ReadAllBytes("Mods/MapConverter/System.Buffers.dll"));
-            AppDomain.CurrentDomain.Load(File.ReadAllBytes("Mods/MapConverter/System.Runtime.CompilerServices.Unsafe.dll"));
-            AppDomain.CurrentDomain.Load(File.ReadAllBytes("Mods/MapConverter/System.Numerics.Vectors.dll"));
-            AppDomain.CurrentDomain.Load(File.ReadAllBytes("Mods/MapConverter/System.Memory.dll"));
-            AppDomain.CurrentDomain.Load(File.ReadAllBytes("Mods/MapConverter/OpenCvSharp.dll"));
-            LoadAfter(modEntry);
+            OpenCvSharp.Internal.WindowsLibraryLoader.Instance.AdditionalPaths.Add(System.IO.Path.Combine(modEntry.Path, "Dependencies"));
 #endif
             Mod = modEntry;
             Logger = modEntry.Logger;
-            AppDomain.CurrentDomain.Load(File.ReadAllBytes("Mods/MapConverter/AdofaiMapConverter.dll"));
             modEntry.OnGUI = OnGUI;
             modEntry.OnUpdate = (m, dt) =>
             {
@@ -55,12 +46,7 @@ namespace MapConverter
             };
             Runner.Run(modEntry);
         }
-#if HAS_OPENCV
-        static void LoadAfter(ModEntry modEntry)
-        {
-            OpenCvSharp.Internal.WindowsLibraryLoader.Instance.AdditionalPaths.Add("Mods/MapConverter/OpenCvSharpExtern");
-        }
-#endif
+
         public static void OnGUI(ModEntry modEntry)
         {
             GUILayout.BeginHorizontal();

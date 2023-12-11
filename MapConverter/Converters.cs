@@ -17,6 +17,7 @@ using System.Reflection.Emit;
 using LevelEventType = AdofaiMapConverter.Types.LevelEventType;
 using PropertyInfo = System.Reflection.PropertyInfo;
 using ADOFAI;
+using System.Threading.Tasks;
 #if HAS_OPENCV
 using System.Drawing;
 using OpenCvSharp;
@@ -713,7 +714,7 @@ namespace MapConverter
                 }
                 if (breakLimitCombo.Check())
                 {
-                    scrFlash.Flash(Color.white);
+                    scrFlash.Flash(UnityEngine.Color.white);
                     limitBroken = true;
                     OnEnable();
                 }
@@ -765,7 +766,7 @@ namespace MapConverter
                         }
                         return insts;
                     }
-                    public static void RemoveMethodCall(List<CodeInstruction> insts, MethodInfo target, int start = -1, int end = -1)
+                    public static void RemoveMethodCall(List<CodeInstruction> insts, MethodInfo target, Func<int, int> removeAfter = null, int start = -1, int end = -1)
                     {
                         List<int> calls = new List<int>();
                         for (int i = start < 0 ? 0 : start; i < (end < 0 ? insts.Count : end); i++)
@@ -783,13 +784,13 @@ namespace MapConverter
                         int offset = 0;
                         foreach (int call in calls)
                         {
-                            int from;
-                            insts.RemoveAt(from = call + offset--);
+                            insts.RemoveAt(call + offset--);
                             int count = parameterCount + (isInstance ? 1 : 0);
                             for (int i = 0; i < count; i++)
                                 insts.Insert(i + call + offset++, new CodeInstruction(OpCodes.Pop));
                             if (hasReturn)
                                 insts.RemoveAt(call + offset--);
+                            offset += removeAfter?.Invoke(call + offset) ?? 0;
                         }
                     }
                 }
@@ -1382,7 +1383,9 @@ namespace MapConverter
                         int width = FastParser.ParseInt(Setting.Width);
                         int height = FastParser.ParseInt(Setting.Height);
                         var img = new Bitmap(Main.Path);
-                        var result = ImageGenerator.Generate(img);
+                        int pixels = (width < 0 ? img.Width : width) * (height < 0 ? img.Height : height);
+                        var prog = new Progress<int>(i => Notification = $"Pixels: {i}/{pixels}");
+                        var result = ImageGenerator.Generate(img, prog, width, height);
                         var resultStr = result.ToNode().ToString(4);
                         var lastIdx = file.Name.LastIndexOf('.');
                         var resultPath = $"{file.DirectoryName}/{file.Name.Remove(lastIdx, file.Name.Length - lastIdx)}.adofai";
@@ -1461,7 +1464,10 @@ namespace MapConverter
                         int height = FastParser.ParseInt(Setting.Height);
                         int from = FastParser.ParseInt(Setting.From);
                         int to = FastParser.ParseInt(Setting.To);
-                        var result = VideoGenerator.Generate(new VideoCapture(file.FullName), width, height, from, to);
+                        var capture = new VideoCapture(file.FullName);
+                        int frames = (int)Math.Ceiling(capture.Fps * (to - from));
+                        Progress<int> videoProg = new Progress<int>(i => Notification = $"Frames {i}/{frames}");
+                        var result = VideoGenerator.Generate(capture, null, videoProg, width, height, from, to);
                         var resultStr = result.ToNode().ToString(4);
                         var lastIdx = file.Name.LastIndexOf('.');
                         var resultPath = $"{file.DirectoryName}/{file.Name.Remove(lastIdx, file.Name.Length - lastIdx)}.adofai";
@@ -1482,6 +1488,34 @@ namespace MapConverter
                 public string Height = "-1";
                 public string From = "-1";
                 public string To = "-1";
+            }
+        }
+        [HarmonyPatch(typeof(scnEditor), nameof(scnEditor.ZoomCamera))]
+        public static class EditorCameraZoomUnlock
+        {
+            public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+            {
+                List<CodeInstruction> insts = new List<CodeInstruction>(instructions);
+                var clamp = typeof(Mathf).GetMethod("Clamp", new[] { typeof(float), typeof(float), typeof(float) });
+                NormalConverters.PlanetConverterTweak.Patches.BreakPlanetsLimit_CustomLevel
+                    .RemoveMethodCall(insts, clamp,
+                    offset =>
+                    {
+                        var increaseOffset = 0;
+                        insts.Insert(offset + increaseOffset++, new CodeInstruction(OpCodes.Pop));
+
+
+                        // editor.camUserSizeMultiplier = Mathf.Clamp(num, 0.1f, float.MaxValue);
+                        insts.Insert(offset + increaseOffset++, new CodeInstruction(OpCodes.Ldarg_0));
+                        insts.Insert(offset + increaseOffset++, new CodeInstruction(OpCodes.Ldloc_1));
+                        insts.Insert(offset + increaseOffset++, new CodeInstruction(OpCodes.Ldc_R4, 0.1f));
+                        insts.Insert(offset + increaseOffset++, new CodeInstruction(OpCodes.Ldc_R4, float.MaxValue));
+                        insts.Insert(offset + increaseOffset++, new CodeInstruction(OpCodes.Call, clamp));
+                        insts.Insert(offset + increaseOffset++, new CodeInstruction(OpCodes.Stfld, AccessTools.Field(typeof(scnEditor), "camUserSizeMultiplier")));
+
+                        return increaseOffset;
+                    });
+                return insts;
             }
         }
     }
