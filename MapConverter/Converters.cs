@@ -796,7 +796,8 @@ namespace MapConverter
                 }
             }
         }
-        [HarmonyPatch(typeof(scnEditor), "OpenLevel")]
+        [HarmonyPatch(typeof(scnEditor), "OpenLevel", new Type[] { })]
+        [HarmonyPatch(typeof(scnEditor), "OpenLevel", new Type[] { typeof(string) })]
         public static class SetMapPath
         {
             public static void Postfix(scnEditor __instance) => Main.Path = __instance.customLevel?.levelPath;
